@@ -27,6 +27,13 @@
       "pure": false,
       "proof": true,
       "arguments": [
+        {
+          "name": "report_hash",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        }
       ],
       "result-type": {
         "type-name": "Tuple",
@@ -130,8 +137,22 @@
       }
     },
     {
-      "name": "verification_count",
+      "name": "reports",
       "index": 2,
+      "exported": true,
+      "storage": "Map",
+      "key": {
+        "type-name": "Bytes",
+        "length": 32
+      },
+      "value": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "verification_count",
+      "index": 3,
       "exported": true,
       "storage": "Counter"
     }

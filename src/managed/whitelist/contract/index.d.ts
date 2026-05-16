@@ -14,13 +14,15 @@ export type Witnesses<PS> = {
 export type ImpureCircuits<PS> = {
   add_to_whitelist(context: __compactRuntime.CircuitContext<PS>,
                    pk_0: Uint8Array): __compactRuntime.CircuitResults<PS, []>;
-  verify_whitelist_membership(context: __compactRuntime.CircuitContext<PS>): __compactRuntime.CircuitResults<PS, []>;
+  verify_whitelist_membership(context: __compactRuntime.CircuitContext<PS>,
+                              report_hash_0: Uint8Array): __compactRuntime.CircuitResults<PS, []>;
 }
 
 export type ProvableCircuits<PS> = {
   add_to_whitelist(context: __compactRuntime.CircuitContext<PS>,
                    pk_0: Uint8Array): __compactRuntime.CircuitResults<PS, []>;
-  verify_whitelist_membership(context: __compactRuntime.CircuitContext<PS>): __compactRuntime.CircuitResults<PS, []>;
+  verify_whitelist_membership(context: __compactRuntime.CircuitContext<PS>,
+                              report_hash_0: Uint8Array): __compactRuntime.CircuitResults<PS, []>;
 }
 
 export type PureCircuits = {
@@ -29,7 +31,8 @@ export type PureCircuits = {
 export type Circuits<PS> = {
   add_to_whitelist(context: __compactRuntime.CircuitContext<PS>,
                    pk_0: Uint8Array): __compactRuntime.CircuitResults<PS, []>;
-  verify_whitelist_membership(context: __compactRuntime.CircuitContext<PS>): __compactRuntime.CircuitResults<PS, []>;
+  verify_whitelist_membership(context: __compactRuntime.CircuitContext<PS>,
+                              report_hash_0: Uint8Array): __compactRuntime.CircuitResults<PS, []>;
 }
 
 export type Ledger = {
@@ -47,6 +50,13 @@ export type Ledger = {
     size(): bigint;
     member(elem_0: Uint8Array): boolean;
     [Symbol.iterator](): Iterator<Uint8Array>
+  };
+  reports: {
+    isEmpty(): boolean;
+    size(): bigint;
+    member(key_0: Uint8Array): boolean;
+    lookup(key_0: Uint8Array): Uint8Array;
+    [Symbol.iterator](): Iterator<[Uint8Array, Uint8Array]>
   };
   readonly verification_count: bigint;
 }

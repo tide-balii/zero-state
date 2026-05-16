@@ -39,6 +39,7 @@ export async function runZeroStateDApp(providers: WhitelistProviders) {
   const contractConfig = {
     privateState,
     compiledContract: new Contract(createWhitelistWitnesses()) as any,
+    args: [],
   };
 
   const deployedContract = await deployContract(providers, contractConfig);
@@ -52,14 +53,17 @@ export async function runZeroStateDApp(providers: WhitelistProviders) {
   await deployedContract.callTx.add_to_whitelist(publicKey);
   logger.info(`User added to whitelist successfully.`);
 
-  // 4. Client-side Interaction: ZK Proof Verification
+    // 4. Client-side Interaction: ZK Proof Verification
   logger.info("Generating ZK Proof of Membership...");
   
   try {
+    // Generate a mock report hash (in reality, this would be the SHA-256 hash of the sanitized text)
+    const mockReportHash = new Uint8Array(32).fill(7);
+
     // The SDK executes the witnesses, grabs the private key,
     // looks up the Merkle path from the indexer, runs the prover locally,
-    // and sends ONLY the ZK proof to the network.
-    await deployedContract.callTx.verify_whitelist_membership();
+    // and sends ONLY the ZK proof + the report hash to the network.
+    await deployedContract.callTx.verify_whitelist_membership(mockReportHash);
     logger.info(`Membership verified successfully via ZK Proof!`);
     
     // Check the updated Verification Count on the public ledger
