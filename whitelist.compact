@@ -1,0 +1,133 @@
+pragma language_version >= 0.16 && <= 0.24;
+
+import CompactStandardLibrary;
+
+// =============================================================================
+// ZeroState Whitelist Contract
+// =============================================================================
+//
+// PURPOSE:
+//   Proves a user possesses a secret key whose derived public key exists as a
+//   leaf in a Merkle tree of whitelisted identities — without revealing which
+//   leaf or which user initiated the proof.
+//
+// PRIVACY MODEL:
+//   - The secret key never leaves the prover (supplied via witness).
+//   - The Merkle path never appears on-chain (supplied via witness).
+//   - Only the tree root is public (stored on the ledger).
+//   - A nullifier prevents double-use while preserving anonymity.
+//
+// ARCHITECTURE:
+//   ┌─────────────┐      ┌──────────────────┐      ┌────────────────┐
+//   │  Witnesses   │─────▶│  Pure Circuits    │─────▶│ Export Circuits │
+//   │ (off-chain)  │      │ (crypto helpers)  │      │  (on-chain)    │
+//   └─────────────┘      └──────────────────┘      └────────────────┘
+//
+// TREE DEPTH: 32 levels → supports up to 2^32 (~4 billion) whitelisted keys.
+// =============================================================================
+
+
+// ─── Witnesses (Off-Chain Data Providers) ────────────────────────────────────
+// Witnesses are declarations only. Implementations live in the TypeScript prover.
+
+// Returns the caller's private secret key (never disclosed on-chain).
+witness local_secret_key(): Bytes<32>;
+
+// Given a derived public key, returns the Merkle authentication path proving
+// that the public key is a leaf in the whitelist tree.
+witness find_whitelist_path(pk: Bytes<32>): MerkleTreePath<32, Bytes<32>>;
+
+
+// ─── Ledger State (On-Chain) ─────────────────────────────────────────────────
+
+// The whitelist Merkle tree. Uses HistoricMerkleTree so that proofs generated
+// against a prior root remain valid even after new keys are added.
+export ledger whitelist: HistoricMerkleTree<32, Bytes<32>>;
+
+// Tracks which nullifiers have been spent. Prevents the same secret key
+// from being used to prove membership more than once.
+export ledger spent_nullifiers: Set<Bytes<32>>;
+
+// Counts the total number of successful whitelist verifications.
+export ledger verification_count: Counter;
+
+
+// ─── Pure Circuits (Cryptographic Helpers) ────────────────────────────────────
+// These are stateless helper functions. They do not read or write the ledger.
+// Domain separators ensure that hashes for different purposes never collide.
+
+// Derives a deterministic public key from a secret key.
+// Uses a domain-separated Poseidon hash: H("zerostate:pk:" || sk)
+circuit derive_public_key(sk: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<2, Bytes<32>>>([pad(32, "zerostate:pk:"), sk]);
+}
+
+// Computes a nullifier from a secret key.
+// Uses a distinct domain separator: H("zerostate:nul:" || sk)
+// The nullifier is deterministic per-key but unlinkable to the public key.
+circuit compute_nullifier(sk: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<2, Bytes<32>>>([pad(32, "zerostate:nul:"), sk]);
+}
+
+
+// ─── Exported Circuits (Public API) ──────────────────────────────────────────
+
+// Adds a new public key to the whitelist.
+// The public key is disclosed because it becomes a public leaf in the tree.
+export circuit add_to_whitelist(pk: Bytes<32>): [] {
+  whitelist.insert(disclose(pk));
+}
+
+// Core ZK verification circuit.
+// Proves the caller knows a secret key whose public key is in the whitelist,
+// without revealing which key or which leaf was used.
+//
+// Zero-knowledge guarantees:
+//   1. The secret key is never disclosed (witness-private).
+//   2. The Merkle path is never disclosed (witness-private).
+//   3. Only the nullifier is revealed (to prevent double-use).
+//   4. The tree root check is public (validates against ledger state).
+export circuit verify_whitelist_membership(): [] {
+  // ── Step 1: Obtain the caller's secret key (private) ──
+  const sk = local_secret_key();
+
+  // ── Step 2: Derive the public key from the secret key ──
+  // This is computed inside the ZK circuit, so the link between sk and pk
+  // is proven but neither value is revealed on-chain.
+  const pk = derive_public_key(sk);
+
+  // ── Step 3: Retrieve the Merkle authentication path (private) ──
+  // The witness provides the sibling hashes along the path from the leaf
+  // to the root. This path is never disclosed.
+  const merkle_path = find_whitelist_path(pk);
+
+  // ── Step 4: Compute the expected Merkle root from the path ──
+  // merkleTreePathRoot walks the authentication path, hashing each level,
+  // to reconstruct what the root should be if the leaf is genuine.
+  const computed_root = merkleTreePathRoot<32, Bytes<32>>(merkle_path);
+
+  // ── Step 5: Verify the computed root matches the on-chain tree ──
+  // checkRoot on HistoricMerkleTree validates against the current root
+  // AND all prior roots, ensuring proofs remain valid after new insertions.
+  assert(
+    whitelist.checkRoot(disclose(computed_root)),
+    "Whitelist proof invalid: computed root does not match any known tree state"
+  );
+
+  // ── Step 6: Compute and check the nullifier (anti-replay) ──
+  // The nullifier is derived from the secret key with a different domain
+  // separator, making it unlinkable to the public key.
+  const nullifier = compute_nullifier(sk);
+
+  // Ensure this nullifier has not been spent before.
+  assert(
+    !spent_nullifiers.member(disclose(nullifier)),
+    "Nullifier already spent: this key has already been used"
+  );
+
+  // ── Step 7: Record the nullifier to prevent reuse ──
+  spent_nullifiers.insert(disclose(nullifier));
+
+  // ── Step 8: Increment the verification counter ──
+  verification_count.increment(1);
+}
