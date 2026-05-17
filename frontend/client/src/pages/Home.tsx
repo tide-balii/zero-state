@@ -88,20 +88,7 @@ function formatEST(date: Date | string): string {
   );
 }
 
-const INITIAL_REPORTS: LedgerReport[] = [
-  {
-    id: "rpt-001",
-    text: "An incident of safety protocol bypass regarding heavy machinery maintenance has been reported at a regional facility, accompanied by allegations of management retaliation.",
-    timestamp: formatEST("2025-05-14T09:42:00-04:00"),
-    nullifier: "0x8F9B...3C12",
-  },
-  {
-    id: "rpt-002",
-    text: "Irregular expense reimbursement patterns have been identified within a departmental budget cycle, suggesting potential misappropriation of corporate funds over a three-month period.",
-    timestamp: formatEST("2025-05-10T14:17:00-04:00"),
-    nullifier: "0xA2D4...7E89",
-  },
-];
+const INITIAL_REPORTS: LedgerReport[] = [];
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
@@ -177,18 +164,57 @@ function LoginGate({ onAuthenticated }: { onAuthenticated: () => void }) {
     setWalletState("requesting");
     
     try {
-      if (typeof window.midnight?.lace?.enable !== "function") {
+      const midnight = (window as any).midnight;
+      console.log("Window.midnight detected keys:", midnight ? Object.keys(midnight) : "null");
+
+      if (!midnight) {
+        throw new Error("Midnight Lace wallet extension is not installed or enabled in this browser.");
+      }
+
+      // Dynamically find a wallet entry that has an 'enable' or 'connect' function
+      const walletEntries = Object.entries(midnight).filter(([_, api]: [string, any]) => 
+        api && (typeof api.enable === 'function' || typeof api.connect === 'function')
+      );
+
+      if (walletEntries.length === 0) {
         throw new Error("Lace wallet extension is not installed or enabled in this browser.");
       }
+
+      // Prefer mnLace if available, otherwise take the first compatible wallet
+      const [walletName, walletAPI] = midnight.mnLace 
+        ? ["mnLace", midnight.mnLace] 
+        : walletEntries[0];
+
+      console.log(`Attempting to connect to: ${walletName}`);
       
       setWalletState("approving");
-      const dAppConnector = await window.midnight.lace.enable();
+      
+      // Support both .enable() and .connect() APIs
+      const networkId = import.meta.env.VITE_MIDNIGHT_NETWORK || 'preview';
+      console.log(`Connecting to network: ${networkId}`);
+
+      const dAppConnector = typeof (walletAPI as any).enable === 'function'
+        ? await (walletAPI as any).enable()
+        : await (walletAPI as any).connect(networkId);
+
+      // Verify API version compatibility
+      if (walletAPI.apiVersion && !walletAPI.apiVersion.startsWith('1.')) {
+        console.warn(`Potential API version mismatch: expected 1.x, got ${walletAPI.apiVersion}`);
+      }
+
+      // Hint usage capabilities if supported by the connector
+      if (dAppConnector && typeof (dAppConnector as any).hintUsage === 'function') {
+        await (dAppConnector as any).hintUsage(['submitTransaction', 'generateProof']);
+      }
       
       setWalletState("connected");
-    } catch (error) {
+    } catch (error: any) {
       console.error("Wallet connection failed:", error);
       setWalletState("idle");
-      alert("Failed to connect wallet: " + (error as Error).message);
+      
+      // Provide a clean error message to the user
+      const message = error.message || String(error);
+      alert(`Failed to connect wallet: ${message}`);
     }
   };
 
@@ -1155,96 +1181,62 @@ function EmployerLedger({ reports }: { reports: LedgerReport[] }) {
           </div>
         </div>
 
-        {/* Metrics Bar */}
-        <div className="grid grid-cols-3 gap-4 mb-8">
-          {[
-            {
-              icon: <FileText size={18} className="text-indigo-600" />,
-              label: "Total Verified Reports",
-              value: reports.length + 12,
-              color: "indigo",
-            },
-            {
-              icon: <AlertTriangle size={18} className="text-amber-600" />,
-              label: "Active Investigations",
-              value: 3,
-              color: "amber",
-            },
-            {
-              icon: <BarChart3 size={18} className="text-emerald-600" />,
-              label: "Security Integrity Score",
-              value: "100%",
-              color: "emerald",
-            },
-          ].map((stat, i) => (
-            <div
-              key={i}
-              className="rounded-2xl p-5 border bg-white"
-              style={{
-                borderColor: "#e2e8f0",
-                boxShadow: "0 1px 3px rgba(0,0,0,0.06), 0 4px 12px rgba(0,0,0,0.04)",
-              }}
-            >
-              <div className="flex items-center gap-2 mb-3">
-                {stat.icon}
-                <span className="text-xs font-medium text-slate-500 uppercase tracking-wider">
-                  {stat.label}
+
+          {reports.length === 0 ? (
+            <div className="flex flex-col items-center justify-center p-12 rounded-3xl border border-slate-200 border-dashed bg-white/50 backdrop-blur-sm mt-8 animate-in fade-in zoom-in duration-500">
+              <div className="w-16 h-16 rounded-2xl bg-slate-100 flex items-center justify-center mb-6 shadow-sm">
+                <Lock size={32} className="text-slate-300" />
+              </div>
+              <h3 
+                className="text-lg font-bold text-slate-800 mb-2"
+                style={{ fontFamily: "'Space Grotesk', sans-serif" }}
+              >
+                No verified reports found.
+              </h3>
+              <p className="text-sm text-slate-400 text-center max-w-sm font-mono-data leading-relaxed">
+                The ledger is secure and waiting for zero-knowledge submissions. 
+                Reports will appear here once mathematically verified on-chain.
+              </p>
+            </div>
+          ) : (
+            <>
+              <div className="flex items-center gap-2 mb-2">
+                <Activity size={14} className="text-slate-400" />
+                <span className="text-xs font-semibold text-slate-400 uppercase tracking-widest font-mono-data">
+                  Verified Report Feed
+                </span>
+                <div className="flex-1 h-px bg-slate-200 ml-2" />
+                <span className="text-xs text-slate-400 font-mono-data">
+                  {reports.length} report{reports.length !== 1 ? "s" : ""}
                 </span>
               </div>
-              <div
-                className="text-3xl font-bold tracking-tight"
-                style={{
-                  fontFamily: "'Space Grotesk', sans-serif",
-                  color:
-                    stat.color === "indigo"
-                      ? "#4f46e5"
-                      : stat.color === "amber"
-                      ? "#d97706"
-                      : "#059669",
-                }}
-              >
-                {stat.value}
-              </div>
-            </div>
-          ))}
-        </div>
 
-        {/* Ledger Feed */}
-        <div className="space-y-4">
-          <div className="flex items-center gap-2 mb-2">
-            <Activity size={14} className="text-slate-400" />
-            <span className="text-xs font-semibold text-slate-400 uppercase tracking-widest font-mono-data">
-              Verified Report Feed
-            </span>
-            <div className="flex-1 h-px bg-slate-200 ml-2" />
-            <span className="text-xs text-slate-400 font-mono-data">
-              {reports.length} report{reports.length !== 1 ? "s" : ""}
-            </span>
-          </div>
-
-          {reports.map((report, idx) => (
+              {reports.map((report, idx) => (
             <div
               key={report.id}
               onClick={() => setSelectedReport(report)}
-              className={`group rounded-2xl p-5 border bg-white transition-all duration-200 cursor-pointer hover:shadow-lg hover:-translate-y-0.5 ${
+              className={`group rounded-2xl p-5 border bg-white transition-all duration-200 cursor-pointer shadow-md hover:shadow-lg hover:-translate-y-0.5 ${
                 report.isNew ? "animate-slide-up" : ""
               }`}
               style={{
                 borderColor: report.isNew ? "#818cf8" : "#e2e8f0",
-                boxShadow: report.isNew
-                  ? "0 0 0 2px rgba(99,102,241,0.15), 0 4px 20px rgba(99,102,241,0.1)"
-                  : "0 1px 3px rgba(0,0,0,0.06), 0 4px 12px rgba(0,0,0,0.04)",
                 animationDelay: `${idx * 50}ms`,
               }}
             >
-              {/* New badge */}
-              {report.isNew && (
-                <div className="flex items-center gap-1.5 mb-3">
+              {/* ZK-VERIFIED Badge */}
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-blue-100 bg-blue-50/40">
+                  <Shield size={11} className="text-blue-500" />
+                  <span className="text-[10px] font-bold font-mono-data tracking-tight bg-gradient-to-r from-blue-500 to-indigo-600 bg-clip-text text-transparent">
+                    ZK-VERIFIED
+                  </span>
+                </div>
+                {report.isNew && (
                   <span className="text-xs font-semibold text-indigo-600 bg-indigo-50 border border-indigo-200 px-2.5 py-0.5 rounded-full animate-check-reveal">
                     ✦ New Submission
                   </span>
-                </div>
-              )}
+                )}
+              </div>
 
               {/* Report text */}
               <p
@@ -1303,9 +1295,11 @@ function EmployerLedger({ reports }: { reports: LedgerReport[] }) {
                   <span>View details</span>
                 </div>
               </div>
-            </div>
-          ))}
-        </div>
+              </div>
+            ))}
+          </>
+        )}
+      </div>
 
         {/* Report Detail Modal */}
         {selectedReport && (
@@ -1321,7 +1315,6 @@ function EmployerLedger({ reports }: { reports: LedgerReport[] }) {
           <span>All reports cryptographically verified · No author identity stored</span>
         </div>
       </div>
-    </div>
   );
 }
 
