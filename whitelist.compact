@@ -48,6 +48,10 @@ export ledger whitelist: HistoricMerkleTree<32, Bytes<32>>;
 // from being used to prove membership more than once.
 export ledger spent_nullifiers: Set<Bytes<32>>;
 
+// Stores the cryptographically verifiable hashes of the submitted incident reports,
+// mapped to the unique nullifier that authorized them. This forms the public ledger.
+export ledger reports: Map<Bytes<32>, Bytes<32>>;
+
 // Counts the total number of successful whitelist verifications.
 export ledger verification_count: Counter;
 
@@ -81,13 +85,16 @@ export circuit add_to_whitelist(pk: Bytes<32>): [] {
 // Core ZK verification circuit.
 // Proves the caller knows a secret key whose public key is in the whitelist,
 // without revealing which key or which leaf was used.
+// 
+// Takes a cryptographic hash of the incident report and anchors it on-chain
+// to prevent tampering, completing the Public Whistleblower Ledger functionality.
 //
 // Zero-knowledge guarantees:
 //   1. The secret key is never disclosed (witness-private).
 //   2. The Merkle path is never disclosed (witness-private).
-//   3. Only the nullifier is revealed (to prevent double-use).
+//   3. Only the nullifier and report_hash are revealed.
 //   4. The tree root check is public (validates against ledger state).
-export circuit verify_whitelist_membership(): [] {
+export circuit verify_whitelist_membership(report_hash: Bytes<32>): [] {
   // ── Step 1: Obtain the caller's secret key (private) ──
   const sk = local_secret_key();
 
@@ -128,6 +135,9 @@ export circuit verify_whitelist_membership(): [] {
   // ── Step 7: Record the nullifier to prevent reuse ──
   spent_nullifiers.insert(disclose(nullifier));
 
-  // ── Step 8: Increment the verification counter ──
+  // ── Step 8: Anchor the report hash to the nullifier on-chain ──
+  reports.insert(disclose(nullifier), disclose(report_hash));
+
+  // ── Step 9: Increment the verification counter ──
   verification_count.increment(1);
 }

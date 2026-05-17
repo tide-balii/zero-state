@@ -1,0 +1,6 @@
+# Force Unix line endings (LF) for all source files on commit
+* text=auto eol=lf
+
+# Ensure Windows batch files keep CRLF line endings
+*.bat text eol=crlf
+*.cmd text eol=crlf
