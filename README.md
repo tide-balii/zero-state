@@ -1,6 +1,6 @@
-# ZeroState
+# SafeSpeak
 
-ZeroState is an anonymous whistleblowing and feedback platform built on the Midnight Network and powered by Google Gemini AI. It allows whitelisted members to publish verified reports to a public ledger while cryptographically concealing their exact identities.
+SafeSpeak is an anonymous whistleblowing and feedback platform built on the Midnight Network and powered by Google Gemini AI. It allows whitelisted members to publish verified reports to a public ledger while cryptographically concealing their exact identities.
 
 ## Prerequisites
 
